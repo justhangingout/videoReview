@@ -6,15 +6,7 @@ import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Search, Plus, Trash2, Star, XCircle, AlertTriangle, CheckCircle, Sparkles, Wand2, X, Loader, GripVertical } from 'lucide-react';
 
-// --- API & Firebase Configuration ---
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// --- Firebase Configuration & Initialization ---
 const firebaseConfig = {
   apiKey: "AIzaSyDZNs3AvTPsVK3Dn6B7OAgRIvnvTdJgI5Q",
   authDomain: "coles-show-review-app.firebaseapp.com",
@@ -25,10 +17,6 @@ const firebaseConfig = {
   measurementId: "G-XBNXQYKRR9"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-// --- Firebase Initialization ---
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
