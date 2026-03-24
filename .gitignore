@@ -1,0 +1,9 @@
+node_modules/
+.env
+listings.db
+uploads/
+enhanced/
+fb-session.json
+dist/
+*.db-shm
+*.db-wal
