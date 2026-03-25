@@ -9,6 +9,7 @@ const indicators = require('./analysis/indicators');
 const signals    = require('./analysis/signals');
 const ai         = require('./ai/decision');
 const risk       = require('./risk/manager');
+const twitter    = require('./social/twitter');
 
 // ─── Market hours check (Eastern Time) ───────────────────────────────────────
 
@@ -63,26 +64,36 @@ async function scanSymbol(symbol, accountValue) {
       return;
     }
 
-    // 5. AI validation
-    const decision = await ai.validateWithClaude(symbol, signal, ind, candles);
+    // 5. Fetch tweets for additional context (non-blocking — empty array on failure)
+    const twitterHandle = config.TWITTER_HANDLES[symbol] ?? null;
+    const recentTweets  = twitterHandle
+      ? await twitter.fetchRecentTweets(twitterHandle)
+      : [];
+
+    if (recentTweets.length > 0) {
+      logger.log(`[scheduler] ${symbol}: fetched ${recentTweets.length} tweet(s) from @${twitterHandle}`);
+    }
+
+    // 6. AI validation (with tweet context)
+    const decision = await ai.validateWithClaude(symbol, signal, ind, candles, recentTweets);
     if (!decision.approved) {
       logger.log(`[scheduler] ${symbol}: Claude REJECTED — ${decision.reason}`);
       return;
     }
     logger.log(`[scheduler] ${symbol}: Claude APPROVED — ${decision.reason}`);
 
-    // 6. Risk check
+    // 7. Risk check
     if (!risk.canTrade(symbol, accountValue)) {
       return; // reason logged inside canTrade()
     }
 
-    // 7. Execute order
+    // 8. Execute order
     const quantity   = risk.calcPositionSize(quote.price, accountValue);
     const limitPrice = risk.calcLimitPrice(quote.price, signal.type);
 
     const result = await orders.submitOrder(symbol, signal.type, quantity, limitPrice);
 
-    // 8. Track position (for BUY orders)
+    // 9. Track position (for BUY orders)
     if (signal.type === 'BUY') {
       risk.trackPosition(symbol, signal.type, quantity, result.filledPrice, result.orderId);
     } else if (signal.type === 'SELL') {
@@ -91,7 +102,7 @@ async function scanSymbol(symbol, accountValue) {
       if (!closed) logger.warn(`[scheduler] SELL executed for ${symbol} but no tracked position found`);
     }
 
-    // 9. Log to trades.json
+    // 10. Log to trades.json
     logger.logTrade({
       symbol,
       side:        signal.type,

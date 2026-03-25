@@ -7,15 +7,16 @@ const logger    = require('../logger');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
- * Ask Claude to validate a trade signal using recent price action context.
+ * Ask Claude to validate a trade signal using price action and tweet context.
  *
  * @param {string} symbol - Stock ticker
  * @param {{ type: string, strength: number, reasons: string[] }} signal
  * @param {object} indicators - computeIndicators() result
  * @param {object[]} recentCandles - Last 20 candles (oldest→newest)
+ * @param {string[]} [recentTweets] - Recent tweets from the company's Twitter account
  * @returns {{ approved: boolean, reason: string }}
  */
-async function validateWithClaude(symbol, signal, indicators, recentCandles) {
+async function validateWithClaude(symbol, signal, indicators, recentCandles, recentTweets = []) {
   const { rsi, macd, ema9, ema21, bb, currentPrice } = indicators;
   const last20 = recentCandles.slice(-20);
 
@@ -23,6 +24,15 @@ async function validateWithClaude(symbol, signal, indicators, recentCandles) {
   const priceSummary = last20.map((c, i) =>
     `[${i + 1}] O:${c.open.toFixed(2)} H:${c.high.toFixed(2)} L:${c.low.toFixed(2)} C:${c.close.toFixed(2)} V:${c.volume}`
   ).join('\n');
+
+  // Build optional tweet section
+  const tweetSection = recentTweets.length > 0
+    ? `\n## Recent Company Tweets\n${recentTweets.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n`
+    : '';
+
+  const tweetInstruction = recentTweets.length > 0
+    ? '4. Do the recent tweets suggest any positive/negative news, product issues, or sentiment shifts that could affect the stock price?'
+    : '';
 
   const prompt = `You are a quantitative trading risk analyst reviewing a ${signal.type} signal for ${symbol}.
 
@@ -41,12 +51,13 @@ ${signal.reasons.map(r => `  • ${r}`).join('\n')}
 
 ## Last 20 Five-Minute Candles (oldest→newest)
 ${priceSummary}
-
+${tweetSection}
 ## Task
 Should this ${signal.type} trade be executed? Consider:
 1. Is the signal coherent with the recent price action?
 2. Are there any red flags (e.g., extreme volatility, volume anomalies, erratic price swings)?
 3. Does this look like a genuine opportunity or a false signal?
+${tweetInstruction}
 
 Reply with ONLY this JSON (no extra text):
 {"approved": true or false, "reason": "one concise sentence explaining your decision"}`;
@@ -68,7 +79,8 @@ Reply with ONLY this JSON (no extra text):
     const approved = Boolean(parsed.approved);
     const reason   = String(parsed.reason || '').slice(0, 200);
 
-    logger.debug(`[ai] ${symbol} ${signal.type} → ${approved ? 'APPROVED' : 'REJECTED'}: ${reason}`);
+    const tweetInfo = recentTweets.length > 0 ? ` (${recentTweets.length} tweets included)` : '';
+    logger.debug(`[ai] ${symbol} ${signal.type}${tweetInfo} → ${approved ? 'APPROVED' : 'REJECTED'}: ${reason}`);
     return { approved, reason };
 
   } catch (err) {

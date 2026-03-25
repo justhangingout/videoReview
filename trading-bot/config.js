@@ -4,6 +4,25 @@ module.exports = {
   // Stocks to scan each cycle
   WATCHLIST: ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'META', 'GOOGL', 'SPY'],
 
+  // Twitter/X handles for each watchlist symbol (without @).
+  // Set to null for symbols with no relevant company account (e.g. ETFs).
+  TWITTER_HANDLES: {
+    AAPL:  'Apple',
+    TSLA:  'Tesla',
+    NVDA:  'nvidia',
+    MSFT:  'Microsoft',
+    AMZN:  'amazon',
+    META:  'Meta',
+    GOOGL: 'Google',
+    SPY:   null, // S&P 500 ETF — no company account
+  },
+
+  // Max tweets to fetch per symbol per cycle
+  TWITTER_MAX_TWEETS: 5,
+
+  // How long to cache fetched tweets before re-fetching (ms)
+  TWITTER_CACHE_TTL_MS: 5 * 60 * 1000, // 5 minutes
+
   // Cron expression: every 5 minutes, weekdays only
   SCAN_INTERVAL_CRON: '*/5 * * * 1-5',
 
@@ -54,5 +73,5 @@ module.exports = {
 
   // Claude model
   CLAUDE_MODEL:      'claude-sonnet-4-6',
-  CLAUDE_MAX_TOKENS: 200,
+  CLAUDE_MAX_TOKENS: 400,
 };
