@@ -11,6 +11,7 @@ import automationRouter from './routes/automation.js';
 import messagesRouter from './routes/messages.js';
 import settingsRouter from './routes/settings.js';
 import authRouter from './routes/auth.js';
+import { initDefaultSettings } from './store.js';
 
 // Start background message poller
 import './services/poller.js';
@@ -35,6 +36,9 @@ app.use('/api/messages', messagesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/auth', authRouter);
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  // Seed Notion settings with defaults (no-ops if already set)
+  try { await initDefaultSettings(); }
+  catch (err) { console.warn('Could not init Notion settings:', err.message); }
 });

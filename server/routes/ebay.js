@@ -1,7 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
+import { getListing, getPhotos, upsertPlatformListing } from '../store.js';
 
 const router = express.Router();
 
@@ -36,52 +36,28 @@ async function getEbayToken() {
   return _tokenCache.token;
 }
 
-/**
- * POST /api/ebay/post
- * Create and publish an eBay listing
- * Body: { listingId }
- */
 router.post('/post', async (req, res) => {
   const { listingId } = req.body;
-  const listing = db.prepare('SELECT * FROM listings WHERE id = ?').get(listingId);
-  if (!listing) return res.status(404).json({ error: 'Listing not found' });
-
-  const photos = db
-    .prepare('SELECT * FROM listing_photos WHERE listing_id = ? ORDER BY display_order')
-    .all(listingId);
 
   try {
-    const token = await getEbayToken();
-    const sku = uuidv4();
+    const listing = await getListing(listingId);
+    const photos  = await getPhotos(listingId);
+    const token   = await getEbayToken();
+    const sku     = uuidv4();
 
-    // Build image URLs (must be publicly accessible)
     const baseUrl = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3001}`;
-    const imageUrls = photos.map(
-      (p) => `${baseUrl}${p.enhanced_path || p.original_path}`
-    );
+    const imageUrls = photos.map((p) => `${baseUrl}${p.enhanced_path || p.original_path}`);
 
-    // Create inventory item
     await axios.put(
       `${EBAY_BASE}/sell/inventory/v1/inventory_item/${sku}`,
       {
         availability: { shipToLocationAvailability: { quantity: 1 } },
         condition: conditionMap(listing.condition),
-        product: {
-          title: listing.title,
-          description: listing.description,
-          imageUrls,
-        },
+        product: { title: listing.title, description: listing.description, imageUrls },
       },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Content-Language': 'en-US',
-        },
-      }
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Language': 'en-US' } }
     );
 
-    // Create offer
     const offerResp = await axios.post(
       `${EBAY_BASE}/sell/inventory/v1/offer`,
       {
@@ -89,67 +65,48 @@ router.post('/post', async (req, res) => {
         marketplaceId: process.env.EBAY_MARKETPLACE_ID || 'EBAY_US',
         format: 'FIXED_PRICE',
         availableQuantity: 1,
-        categoryId: '99', // General category fallback
+        categoryId: '99',
         listingDescription: listing.description,
-        pricingSummary: {
-          price: { value: String(listing.price), currency: 'USD' },
-        },
+        pricingSummary: { price: { value: String(listing.price), currency: 'USD' } },
         listingPolicies: {
           fulfillmentPolicyId: process.env.EBAY_FULFILLMENT_POLICY_ID || '',
-          paymentPolicyId: process.env.EBAY_PAYMENT_POLICY_ID || '',
-          returnPolicyId: process.env.EBAY_RETURN_POLICY_ID || '',
+          paymentPolicyId:     process.env.EBAY_PAYMENT_POLICY_ID     || '',
+          returnPolicyId:      process.env.EBAY_RETURN_POLICY_ID      || '',
         },
       },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      }
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
     );
 
     const offerId = offerResp.data.offerId;
-
-    // Publish offer
     const publishResp = await axios.post(
       `${EBAY_BASE}/sell/inventory/v1/offer/${offerId}/publish`,
       {},
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    const listingId_ebay = publishResp.data.listingId;
+    const ebayListingId = publishResp.data.listingId;
     const listingUrl = process.env.EBAY_SANDBOX_MODE === 'true'
-      ? `https://www.sandbox.ebay.com/itm/${listingId_ebay}`
-      : `https://www.ebay.com/itm/${listingId_ebay}`;
+      ? `https://www.sandbox.ebay.com/itm/${ebayListingId}`
+      : `https://www.ebay.com/itm/${ebayListingId}`;
 
-    db.prepare(
-      `INSERT INTO platform_listings (listing_id, platform, external_id, status, url, posted_at)
-       VALUES (?, 'ebay', ?, 'live', ?, CURRENT_TIMESTAMP)`
-    ).run(listingId, listingId_ebay, listingUrl);
+    await upsertPlatformListing(listingId, 'ebay', {
+      external_id: ebayListingId,
+      status: 'live',
+      url: listingUrl,
+      posted_at: new Date().toISOString(),
+    });
 
-    res.json({ ok: true, listingId: listingId_ebay, url: listingUrl });
+    res.json({ ok: true, listingId: ebayListingId, url: listingUrl });
   } catch (err) {
     const errMsg = err.response?.data ? JSON.stringify(err.response.data) : err.message;
     console.error('eBay post error:', errMsg);
-
-    db.prepare(
-      `INSERT INTO platform_listings (listing_id, platform, status, error)
-       VALUES (?, 'ebay', 'error', ?)`
-    ).run(listingId, errMsg);
-
+    await upsertPlatformListing(listingId, 'ebay', { status: 'error', error: errMsg }).catch(() => {});
     res.status(500).json({ error: errMsg });
   }
 });
 
 function conditionMap(condition) {
-  const map = {
-    new: 'NEW',
-    like_new: 'LIKE_NEW',
-    good: 'USED_EXCELLENT',
-    fair: 'USED_GOOD',
-    poor: 'USED_ACCEPTABLE',
-  };
-  return map[condition] || 'USED_GOOD';
+  return { new: 'NEW', like_new: 'LIKE_NEW', good: 'USED_EXCELLENT', fair: 'USED_GOOD', poor: 'USED_ACCEPTABLE' }[condition] || 'USED_GOOD';
 }
 
 export default router;

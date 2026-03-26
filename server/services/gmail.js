@@ -1,10 +1,10 @@
 import { google } from 'googleapis';
-import db from '../db.js';
+import { getSetting } from '../store.js';
 
-function getAuthedClient() {
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'google_tokens'").get();
-  if (!row) throw new Error('Google not connected. Visit /auth/google to connect.');
-  const tokens = JSON.parse(row.value);
+async function getAuthedClient() {
+  const tokensRaw = await getSetting('google_tokens');
+  if (!tokensRaw) throw new Error('Google not connected. Visit /auth/google to connect.');
+  const tokens = typeof tokensRaw === 'string' ? JSON.parse(tokensRaw) : tokensRaw;
   const auth = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -19,7 +19,7 @@ function getAuthedClient() {
  * Returns array of { from, subject, body, threadId, messageId }
  */
 export async function fetchCraigslistEmails() {
-  const auth = getAuthedClient();
+  const auth = await getAuthedClient();
   const gmail = google.gmail({ version: 'v1', auth });
 
   const resp = await gmail.users.messages.list({
@@ -62,7 +62,7 @@ export async function fetchCraigslistEmails() {
  * Send an email reply to a Craigslist buyer.
  */
 export async function sendEmailReply({ to, subject, body, threadId }) {
-  const auth = getAuthedClient();
+  const auth = await getAuthedClient();
   const gmail = google.gmail({ version: 'v1', auth });
 
   const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;

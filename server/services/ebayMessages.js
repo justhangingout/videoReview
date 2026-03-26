@@ -1,5 +1,4 @@
 import axios from 'axios';
-import db from '../db.js';
 
 const EBAY_BASE = process.env.EBAY_SANDBOX_MODE === 'true'
   ? 'https://api.sandbox.ebay.com'
